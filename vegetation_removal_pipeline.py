@@ -1,14 +1,14 @@
 import os
 import numpy as np
 import laspy
-import json
+# import json
 import scipy
 import copy
 from tqdm import tqdm
 from time import time
 import itertools
-import pyproj
-from pyproj import CRS
+# import pyproj
+# from pyproj import CRS
 # print(pyproj.datadir.get_data_dir())
 
 
@@ -22,13 +22,13 @@ from pyproj import CRS
 # os.environ['PROJ_LIB'] = r"C:\Users\swann\.conda\envs\PDM_test_pdal\lib\site-packages\pyproj\proj_dir\share\proj"
 # os.environ['PROJ_LIB'] = r"C:\Users\swann\.conda\envs\PDM_test_pdal\Library\share\proj"
 
-import pdal
-print(os.environ['PROJ_LIB'])
-for key in os.environ.keys():
-    print(key)
+# import pdal
+# print(os.environ['PROJ_LIB'])
+# for key in os.environ.keys():
+#     print(key)
 
-print(CRS.from_epsg(2056))
-quit()
+# print(CRS.from_epsg(2056))
+# quit()
 
 
 # import pdal
@@ -38,138 +38,237 @@ MODE = "PRE"    # choose between "PRE" (for preprocessing) and "POST" (for postp
 # ==================
 
 # ===== INPUTS =====
-SRC_INPUT = r"D:\GitHubProjects\Terranum_repo\TreeSegmentation\data\Barmasse\Barmasse_2024\stripes\Barmasse_2024_AllScans_Subsample4cm.laz"
-TILE_SIZE = 500
-OVERLAP = 50
+SRC_INPUT = r"D:\GitHubProjects\Terranum_repo\TreeSegmentation\data\Barmasse\Barmasse_2025\test_from_python_script\Barmasse_2025_AllScans_Raw_Sub2cm_clean.laz"
+TILE_SIZE = 100
+OVERLAP = 20
 GRID_SIZE = 10
-STRIPE_WIDTH = 5
+STRIPE_WIDTH = 20
+SHIFT=0
+METHOD='quadric'
+do_save_floor=True
+do_keep_existing_flatten = True
 # ==================
 
 
-def tilling(src_input, src_target, tile_size, overlap=0, verbose=True):
-    """
-    Tile the input LiDAR file into square tiles using PDAL and store them in the destination folder.
+# def tilling(src_input, src_target, tile_size, overlap=0, verbose=True):
+#     """
+#     Tile the input LiDAR file into square tiles using PDAL and store them in the destination folder.
 
-    Args:
-        - verbose (bool): Whether to print verbose status updates.
+#     Args:
+#         - verbose (bool): Whether to print verbose status updates.
 
-    Returns:
-        - None: Splits the input file into tiles and saves them in the destination folder.
-    """
+#     Returns:
+#         - None: Splits the input file into tiles and saves them in the destination folder.
+#     """
 
-    print(f"Start tilling (with overlap = {overlap}m)...")
-    os.makedirs(src_target, exist_ok=True)
+#     print(f"Start tilling (with overlap = {overlap}m)...")
+#     os.makedirs(src_target, exist_ok=True)
     
-    # compute the estimate number of tiles
-    if verbose:
-        print("Computing the bounds...")
-    original_file = laspy.read(src_input)
-    x_min = original_file.x.min()
-    x_max = original_file.x.max()
-    y_min = original_file.y.min()
-    y_max = original_file.y.max() 
-    if verbose:
-        print('Done!')
+#     # compute the estimate number of tiles
+#     if verbose:
+#         print("Computing the bounds...")
+#     original_file = laspy.read(src_input)
+#     x_min = original_file.x.min()
+#     x_max = original_file.x.max()
+#     y_min = original_file.y.min()
+#     y_max = original_file.y.max() 
+#     if verbose:
+#         print('Done!')
 
-    output_pattern = os.path.join(
-        src_target, 
-        os.path.basename(src_input).split('.')[0] + "_tile_#.laz",
-        )
+#     output_pattern = os.path.join(
+#         src_target, 
+#         os.path.basename(src_input).split('.')[0] + "_tile_#.laz",
+#         )
+
+#     x_steps = int((x_max - x_min) / tile_size) + 1
+#     y_steps = int((y_max - y_min) / tile_size) + 1
+#     combinations = list(itertools.product(range(x_steps), range(y_steps)))
+#     list_bounds = []
+#     for (i,j) in combinations:
+#         x0 = x_min + i * tile_size - overlap
+#         x1 = x_min + (i + 1) * tile_size + overlap
+#         y0 = y_min + j * tile_size - overlap
+#         y1 = y_min + (j + 1) * tile_size + overlap
+
+#         bounds = f"([{x0},{x1}],[{y0},{y1}])"
+#         list_bounds.append(bounds)
+
+#     pipeline_json = {
+#         "pipeline": [
+#             {
+#                 "type": "readers.las",
+#                 "filename": src_input,
+#                 "spatialreference": "EPSG:2056",
+#                 "extra_dims": "id_point=uint32"
+#             },
+#             {
+#                 "type": "filters.crop", 
+#                 "bounds": list_bounds
+#             },
+#             {
+#                 "type": "writers.las", 
+#                 "filename": output_pattern, 
+#                 'extra_dims': "id_point=uint32"
+#             }
+#         ]
+#     }
+    
+#     if verbose:
+#         print("Creation of the tiles (might take a few minutes)")
+#     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
+#     pipeline.execute()
+#     if verbose:
+#         print("Process done")
+
+def tilling(src_input, src_target, tile_size, overlap=0, shift=0, verbose=True):
+    """
+    Crops a LAS/LAZ file into tiles using laspy directly (preserves id_point and coordinates).
+    """
+    os.makedirs(src_target, exist_ok=True)
+
+    las = laspy.read(src_input)
+    x_min, x_max = las.x.min() - shift, las.x.max()
+    y_min, y_max = las.y.min() - shift, las.y.max()
 
     x_steps = int((x_max - x_min) / tile_size) + 1
     y_steps = int((y_max - y_min) / tile_size) + 1
+
     combinations = list(itertools.product(range(x_steps), range(y_steps)))
-    list_bounds = []
-    for (i,j) in combinations:
-        x0 = x_min + i * tile_size - overlap
-        x1 = x_min + (i + 1) * tile_size + overlap
-        y0 = y_min + j * tile_size - overlap
-        y1 = y_min + (j + 1) * tile_size + overlap
-
-        bounds = f"([{x0},{x1}],[{y0},{y1}])"
-        list_bounds.append(bounds)
-
-    pipeline_json = {
-        "pipeline": [
-            {
-                "type": "readers.las",
-                "filename": src_input,
-                "spatialreference": "EPSG:2056",
-                "extra_dims": "id_point=uint32"
-            },
-            {
-                "type": "filters.crop", 
-                "bounds": list_bounds
-            },
-            {
-                "type": "writers.las", 
-                "filename": output_pattern, 
-                'extra_dims': "id_point=uint32"
-            }
-        ]
-    }
     
-    if verbose:
-        print("Creation of the tiles (might take a few minutes)")
-    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
-    pipeline.execute()
-    if verbose:
-        print("Process done")
+    print("Creation of tiles:")
+    for _, (ix, iy) in tqdm(enumerate(combinations), total=len(combinations)):
+    # for ix in range(x_steps):
+    #     for iy in range(y_steps):
+        x0 = x_min + ix * tile_size - overlap
+        x1 = x_min + (ix + 1) * tile_size + overlap
+        y0 = y_min + iy * tile_size - overlap
+        y1 = y_min + (iy + 1) * tile_size + overlap
 
+        mask = (
+            (las.x >= x0) & (las.x <= x1) &
+            (las.y >= y0) & (las.y <= y1)
+        )
+        if not np.any(mask):
+            continue
+
+        # ✅ Create new file with proper header scale/offset
+        header = laspy.LasHeader(point_format=las.header.point_format, version=las.header.version)
+        header.offsets = las.header.offsets
+        header.scales = las.header.scales
+
+        # ✅ Copy CRS if any
+        if hasattr(las.header, "epsg") and las.header.epsg is not None:
+            header.epsg = las.header.epsg
+
+        tile = laspy.LasData(header)
+        tile.points = las.points[mask]
+
+        tile_filename = os.path.join(
+            src_target,
+            f"{os.path.splitext(os.path.basename(src_input))[0]}_tile_{ix}_{iy}.laz"
+        )
+        tile.write(tile_filename)
+
+
+# def stripes_file(src_input_file, src_output, dims, do_keep_existing=False, verbose=True):
+#     [tile_size_x, tile_size_y] = dims
+#     laz = laspy.read(src_input_file)
+#     os.makedirs(src_output, exist_ok=True)
+
+#     xmin, xmax, ymin, ymax = np.min(laz.x), np.max(laz.x), np.min(laz.y), np.max(laz.y)
+
+#     x_edges = np.arange(xmin, xmax, tile_size_x)
+#     y_edges = np.arange(ymin, ymax, tile_size_y)
+
+#     if verbose:
+#         print("Computing the bounds...")
+
+#     list_bounds = []
+#     combinations = list(itertools.product(x_edges, y_edges))
+#     for (x0, y0) in combinations:
+#     # for i, x0 in enumerate(x_edges):
+#     #     for j, y0 in tqdm(enumerate(y_edges), total=len(y_edges)):
+#         x1 = x0 + tile_size_x
+#         y1 = y0 + tile_size_y
+#         bounds = f"([{x0},{x1}],[{y0},{y1}])"
+        
+#         list_bounds.append(bounds)
+
+#     output_pattern = os.path.join(
+#             src_output, 
+#             os.path.basename(src_input_file).split('.')[0] + "_stripe_#.laz",
+#             )
+#     pipeline_json = {
+#         "pipeline": [
+#             {
+#                 "type": "readers.las",
+#                 "filename": src_input_file,
+#                 "spatialreference": "EPSG:2056",
+#                 "extra_dims": "id_point=uint32"
+#             },
+#             {
+#                 "type": "filters.crop", 
+#                 "bounds": list_bounds,
+#             },
+#             {
+#                 "type": "writers.las", 
+#                 "filename": output_pattern, 
+#                 'extra_dims': "id_point=uint32"
+#             }
+#         ]
+#     }
+#     if verbose:
+#         print("Creation of the stripes (might take a few minutes)")
+#     pipeline = pdal.Pipeline(json.dumps(pipeline_json))
+#     pipeline.execute()
+#     if verbose:
+#         print("Process done")
 
 def stripes_file(src_input_file, src_output, dims, do_keep_existing=False, verbose=True):
+    """
+    Crops a LAS/LAZ file into tiles using laspy directly (preserves id_point and coordinates).
+    """
     [tile_size_x, tile_size_y] = dims
-    laz = laspy.read(src_input_file)
+    las = laspy.read(src_input_file)
     os.makedirs(src_output, exist_ok=True)
 
-    xmin, xmax, ymin, ymax = np.min(laz.x), np.max(laz.x), np.min(laz.y), np.max(laz.y)
+    xmin, xmax, ymin, ymax = np.min(las.x), np.max(las.x), np.min(las.y), np.max(las.y)
 
     x_edges = np.arange(xmin, xmax, tile_size_x)
     y_edges = np.arange(ymin, ymax, tile_size_y)
 
-    if verbose:
-        print("Computing the bounds...")
-
-    list_bounds = []
     combinations = list(itertools.product(x_edges, y_edges))
-    for (x0, y0) in combinations:
-    # for i, x0 in enumerate(x_edges):
-    #     for j, y0 in tqdm(enumerate(y_edges), total=len(y_edges)):
+    # for (x0, y0) in combinations:
+    num_skipped = 0
+    for id_stripe, (x0, y0) in tqdm(enumerate(combinations), total=len(combinations)):
         x1 = x0 + tile_size_x
         y1 = y0 + tile_size_y
-        bounds = f"([{x0},{x1}],[{y0},{y1}])"
-        
-        list_bounds.append(bounds)
 
-    output_pattern = os.path.join(
-            src_output, 
-            os.path.basename(src_input_file).split('.')[0] + "_stripe_#.laz",
-            )
-    pipeline_json = {
-        "pipeline": [
-            {
-                "type": "readers.las",
-                "filename": src_input_file,
-                "spatialreference": "EPSG:2056",
-                "extra_dims": "id_point=uint32"
-            },
-            {
-                "type": "filters.crop", 
-                "bounds": list_bounds,
-            },
-            {
-                "type": "writers.las", 
-                "filename": output_pattern, 
-                'extra_dims': "id_point=uint32"
-            }
-        ]
-    }
-    if verbose:
-        print("Creation of the stripes (might take a few minutes)")
-    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
-    pipeline.execute()
-    if verbose:
-        print("Process done")
+        mask = (
+            (las.x >= x0) & (las.x <= x1) &
+            (las.y >= y0) & (las.y <= y1)
+        )
+        if not np.any(mask):
+            num_skipped += 1
+            continue
+
+        # ✅ Create new file with proper header scale/offset
+        header = laspy.LasHeader(point_format=las.header.point_format, version=las.header.version)
+        header.offsets = las.header.offsets
+        header.scales = las.header.scales
+
+        # ✅ Copy CRS if any
+        if hasattr(las.header, "epsg") and las.header.epsg is not None:
+            header.epsg = las.header.epsg
+
+        tile = laspy.LasData(header)
+        tile.points = las.points[mask]
+
+        tile_filename = os.path.join(
+            src_output,
+            f"{os.path.splitext(os.path.basename(src_input_file))[0]}_stripe_{id_stripe - num_skipped}.laz"
+        )
+        tile.write(tile_filename)
 
 
 def remove_duplicates(laz_file, decimals=2):
@@ -239,7 +338,197 @@ def match_pointclouds(laz1, laz2):
     return laz2  # Now sorted to match laz1
 
 
-def flattening_tile(tile_src, tile_new_original_src, grid_size=10, do_save_floor=False, do_keep_existing=False, do_extrapolate_outside_hull=False, verbose=True):
+# def flattening_tile(tile_src, tile_new_original_src, grid_size=10, do_save_floor=False, do_keep_existing=False, do_extrapolate_outside_hull=False, verbose=True):
+#     """
+#     Flattens a tile by interpolating the ground surface and subtracting it from the original elevation.
+
+#     Args:
+#         - tile_src (str): Path to the input tile in LAS/LAZ format.
+#         - tile_new_original_src (str): Path to save the resized original tile after filtering.
+#         - grid_size (int, optional): Size of the grid in meters for local interpolation. Defaults to 10.
+#         - verbose (bool, optional): Whether to display progress and debug information. Defaults to True.
+
+#     Returns:
+#         - None: Saves the floor and flattened versions of the tile and updates the original file.
+#     """
+#     if os.path.exists(tile_new_original_src) and do_keep_existing:
+#         if verbose:
+#             print(f"Skipping. {tile_new_original_src} exists already")
+#         return
+    
+#     # Load file
+#     laz = laspy.read(tile_src)
+#     init_len = len(laz)
+#     if init_len == 0:
+#         return
+    
+#     if verbose:
+#         print(f"Removing duplicates: From {init_len} to {len(laz)}")
+    
+#     points = np.vstack((laz.x, laz.y, laz.z)).T
+#     points_flatten = copy.deepcopy(points)
+#     points_interpolated = copy.deepcopy(points)
+
+#     # Divide into tiles and find local minimums
+#     x_min, y_min = np.min(points[:, :2], axis=0)
+#     x_max, y_max = np.max(points[:, :2], axis=0)
+
+#     x_bins = np.append(np.arange(x_min, x_max, grid_size), x_max)
+#     y_bins = np.append(np.arange(y_min, y_max, grid_size), y_max)
+
+#     grid = {i:{j:[] for j in range(y_bins.size - 1)} for i in range(x_bins.size -1)}
+#     for _, (px, py, pz) in tqdm(enumerate(points), total=len(points), desc="Creating grid", disable=verbose==False):
+#         xbin = np.clip(0, (px - x_min) // grid_size, x_bins.size - 2)
+#         ybin = np.clip(0, (py - y_min) // grid_size, y_bins.size - 2)
+#         try:
+#             grid[xbin][ybin].append((px, py, pz))
+#         except Exception as e:
+#             print(xbin)
+#             print(ybin)
+#             print(x_bins)
+#             print(y_bins)
+#             print(grid.keys())
+#             print(grid[0].keys())
+#             raise e
+
+
+#     # Create grid_min
+#     grid_used = np.zeros((x_bins.size - 1, y_bins.size - 1))
+#     lst_grid_min = []
+#     lst_grid_min_pos = []
+#     for x in grid.keys():
+#         for y in grid[x].keys():
+#             if np.array(grid[x][y]).shape[0] > 0:
+#                 grid_used[x, y] = 1
+#                 lst_grid_min.append(np.min(np.array(grid[x][y])[:,2]))
+#                 arg_min = np.argmin(np.array(grid[x][y])[:,2])
+#                 lst_grid_min_pos.append(np.array(grid[x][y])[arg_min,0:2])
+
+#                 # test if border
+#                 if x == list(grid.keys())[0]:
+#                     lst_grid_min.append(np.min(np.array(grid[x][y])[:,2]))
+#                     lst_grid_min_pos.append(np.array(grid[x][y])[arg_min,0:2] - [5, 0])
+#                 if x == list(grid.keys())[-1]:
+#                     lst_grid_min.append(np.min(np.array(grid[x][y])[:,2]))
+#                     lst_grid_min_pos.append(np.array(grid[x][y])[arg_min,0:2] + [5, 0])
+#                 if y == list(grid[x].keys())[0]:
+#                     lst_grid_min.append(np.min(np.array(grid[x][y])[:,2]))
+#                     lst_grid_min_pos.append(np.array(grid[x][y])[arg_min,0:2] - [0, 5])
+#                 if y == list(grid[x].keys())[-1]:
+#                     lst_grid_min.append(np.min(np.array(grid[x][y])[:,2]))
+#                     lst_grid_min_pos.append(np.array(grid[x][y])[arg_min,0:2] + [0, 5])
+#             else:
+#                 grid_used[x, y] = 0
+#     arr_grid_min_pos = np.vstack(lst_grid_min_pos)
+#     if verbose:
+#         print("Resulting grid:")
+#         print(arr_grid_min_pos.shape)
+#         print(grid_used)
+
+#     # Interpolate
+#     points_xy = np.array(points)[:,0:2]
+#     interpolated_min_z = scipy.interpolate.griddata(arr_grid_min_pos, np.array(lst_grid_min), points_xy, method="cubic", fill_value=-1)
+
+#     # Fill NaNs with nearest neighbor interpolation
+#     if do_extrapolate_outside_hull:
+#         nan_mask = interpolated_min_z == -1
+#         x = np.array(points)[:,0]
+#         y = np.array(points)[:,1]
+
+#         if np.any(nan_mask):
+#             interpolated_min_z[nan_mask] = scipy.interpolate.griddata(arr_grid_min_pos, np.array(lst_grid_min), (x[nan_mask], y[nan_mask]), method='nearest')
+
+#     mask_valid = np.array([x != -1 for x in list(interpolated_min_z)])
+#     points_interpolated = points_interpolated[mask_valid]
+#     points_interpolated[:, 2] = interpolated_min_z[mask_valid]
+
+#     if verbose:
+#         print("Interpolation:")
+#         print(f"Original number of points: {points.shape[0]}")
+#         print(f"Interpollated number of points: {points_interpolated.shape[0]} ({int(points_interpolated.shape[0] / points.shape[0]*100)}%)")
+
+#     # save floor
+#     filtered_points = {dim: getattr(laz, dim)[mask_valid] for dim in laz.point_format.dimension_names}
+#     header = laspy.LasHeader(point_format=laz.header.point_format, version=laz.header.version)
+#     new_las = laspy.LasData(header)
+
+#     #   _Assign filtered and modified data
+#     for dim, values in filtered_points.items():
+#         setattr(new_las, dim, values)
+#     setattr(new_las, 'x', points_interpolated[:,0])
+#     setattr(new_las, 'y', points_interpolated[:,1])
+#     setattr(new_las, 'z', points_interpolated[:,2])
+
+#     #   _Save new file
+#     if do_save_floor:
+#         new_las.write(tile_new_original_src.split('.laz')[0] + "_floor.laz")
+#         if verbose:
+#             print("Saved file: ", tile_new_original_src.split('.laz')[0] + "_floor.laz")
+
+#     # Flatten
+#     points_flatten = points_flatten[mask_valid]
+#     points_flatten[:,2] = points_flatten[:,2] - points_interpolated[:,2]
+
+#     filtered_points = {dim: getattr(laz, dim)[mask_valid] for dim in laz.point_format.dimension_names}
+#     header = laspy.LasHeader(point_format=laz.header.point_format, version=laz.header.version)
+#     header.point_count = 0
+#     new_las = laspy.LasData(header)
+
+
+#     #   _Assign filtered and modified data
+#     for dim, values in filtered_points.items():
+#         setattr(new_las, dim, values)
+
+#     setattr(new_las, 'x', points_flatten[:,0])
+#     setattr(new_las, 'y', points_flatten[:,1])
+#     setattr(new_las, 'z', points_flatten[:,2])
+
+#     #   _Save new file
+#     new_las.write(tile_new_original_src.split('.laz')[0] + "_flatten.laz")
+#     if verbose:
+#         print("Saved file: ", tile_new_original_src.split('.laz')[0] + "_flatten.laz")
+
+#     # Resize original file
+#     laz.points = laz.points[mask_valid]
+#     laz.write(tile_new_original_src)
+#     if verbose:
+#         print("Saved file: ", tile_new_original_src)
+
+
+# def flattening(src_tiles, src_new_tiles_loc, grid_size=10, verbose=True, do_keep_existing=False, verbose_full=False):
+#     """
+#     Applies the flattening process to all tiles in a directory using grid-based ground surface estimation.
+
+#     Args:
+#         - src_tiles (str): Path to the directory containing original tiles.
+#         - src_new_tiles (str): Path to the directory where resized tiles will be saved.
+#         - grid_size (int, optional): Size of the grid in meters for interpolation. Defaults to 10.
+#         - verbose (bool, optional): Whether to show a general progress bar. Defaults to True.
+#         - verbose_full (bool, optional): Whether to print detailed info per tile. Defaults to False.
+
+#     Returns:
+#         - None: Processes and saves flattened tiles into their respective folders.
+#     """
+    
+#     os.makedirs(src_new_tiles_loc, exist_ok=True)
+
+#     print("Starting flattening:")
+#     list_tiles = [x for x in os.listdir(src_tiles) if x.endswith('.laz')]
+#     for _, tile in tqdm(enumerate(list_tiles), total=len(list_tiles), desc="Processing", disable=verbose==False):
+#         if verbose_full:
+#             print("Flattening tile: ", tile)
+#         if do_keep_existing and os.path.exists(os.path.join(src_new_tiles_loc, tile).split('.laz')[0] + "_flatten.laz"):
+#             continue
+
+#         flattening_tile(
+#             tile_src=os.path.join(src_tiles, tile), 
+#             tile_new_original_src=os.path.join(src_new_tiles_loc, tile),
+#             grid_size=grid_size,
+#             do_keep_existing=do_keep_existing,
+#             verbose=verbose_full,
+#             )
+
+def flattening_tile(tile_src, tile_new_original_src, grid_size=10, method='cubic', do_save_floor=False, do_keep_existing=False, do_extrapolate_outside_hull=False, verbose=True):
     """
     Flattens a tile by interpolating the ground surface and subtracting it from the original elevation.
 
@@ -284,6 +573,7 @@ def flattening_tile(tile_src, tile_new_original_src, grid_size=10, do_save_floor
         try:
             grid[xbin][ybin].append((px, py, pz))
         except Exception as e:
+            print("Problem with: ", tile_src)
             print(xbin)
             print(ybin)
             print(x_bins)
@@ -328,7 +618,13 @@ def flattening_tile(tile_src, tile_new_original_src, grid_size=10, do_save_floor
 
     # Interpolate
     points_xy = np.array(points)[:,0:2]
-    interpolated_min_z = scipy.interpolate.griddata(arr_grid_min_pos, np.array(lst_grid_min), points_xy, method="cubic", fill_value=-1)
+    if method == 'cubic':
+        interpolated_min_z = scipy.interpolate.griddata(arr_grid_min_pos, np.array(lst_grid_min), points_xy, method="cubic", fill_value=-1)
+    elif method == 'quadric':
+        rbf = scipy.interpolate.Rbf(arr_grid_min_pos[:,0], arr_grid_min_pos[:,1], np.array(lst_grid_min), function='multiquadric', smooth=5)
+        interpolated_min_z = rbf(points_xy[:,0], points_xy[:,1])
+    else:
+        raise ValueError("Wrong argument for method!")
 
     # Fill NaNs with nearest neighbor interpolation
     if do_extrapolate_outside_hull:
@@ -396,7 +692,7 @@ def flattening_tile(tile_src, tile_new_original_src, grid_size=10, do_save_floor
         print("Saved file: ", tile_new_original_src)
 
 
-def flattening(src_tiles, src_new_tiles_loc, grid_size=10, verbose=True, do_keep_existing=False, verbose_full=False):
+def flattening(src_tiles, src_new_tiles, grid_size=10, verbose=True, method='cubic', do_save_floor=True, do_keep_existing=False, verbose_full=False):
     """
     Applies the flattening process to all tiles in a directory using grid-based ground surface estimation.
 
@@ -411,23 +707,59 @@ def flattening(src_tiles, src_new_tiles_loc, grid_size=10, verbose=True, do_keep
         - None: Processes and saves flattened tiles into their respective folders.
     """
     
-    os.makedirs(src_new_tiles_loc, exist_ok=True)
-
     print("Starting flattening:")
+    os.makedirs(src_new_tiles, exist_ok=True)
     list_tiles = [x for x in os.listdir(src_tiles) if x.endswith('.laz')]
     for _, tile in tqdm(enumerate(list_tiles), total=len(list_tiles), desc="Processing", disable=verbose==False):
         if verbose_full:
             print("Flattening tile: ", tile)
-        if do_keep_existing and os.path.exists(os.path.join(src_new_tiles_loc, tile).split('.laz')[0] + "_flatten.laz"):
+        if do_keep_existing and os.path.exists(os.path.join(src_new_tiles, tile).split('.laz')[0] + "_flatten.laz"):
             continue
 
         flattening_tile(
             tile_src=os.path.join(src_tiles, tile), 
-            tile_new_original_src=os.path.join(src_new_tiles_loc, tile),
+            tile_new_original_src=os.path.join(src_new_tiles, tile),
             grid_size=grid_size,
+            method=method, 
+            do_save_floor=do_save_floor,
             do_keep_existing=do_keep_existing,
             verbose=verbose_full,
             )
+        
+
+def merge_laz(list_files, output_file):
+    """
+    Merge multiple LAS/LAZ files into one using laspy.
+    Preserves all dimensions including extra_dims like 'id_point'.
+    """
+    # Read the header from the first file
+    first_las = laspy.read(list_files[0])
+    header = laspy.LasHeader(point_format=first_las.header.point_format,
+                              version=first_las.header.version)
+
+    all_arrays = []
+    for _, f in tqdm(enumerate(list_files), total=len(list_files)):
+        las = laspy.read(f)
+        all_arrays.append(las.points.array)  # extract structured array
+        # print(f"Read {f} ({len(las)} pts)")
+
+    # Concatenate structured arrays
+    merged_array = np.concatenate(all_arrays)
+
+    # Create new LasData with header
+    out = laspy.LasData(header)
+
+    # Wrap the concatenated array as ScaleAwarePointRecord and assign
+    out.points = laspy.ScaleAwarePointRecord(
+        merged_array,
+        point_format=header.point_format,
+        scales=header.scales,
+        offsets=header.offsets
+    )
+
+    # Save
+    out.write(output_file)
+    print(f"Merged file saved to {output_file}")
 
 
 def preprocess():
@@ -450,17 +782,29 @@ def preprocess():
     laz_original.write(src_with_id)
 
     # tiles without overlap
-    tilling(src_with_id, src_folder_tiles_wo_overlap, TILE_SIZE)
+    tilling(
+        src_input=src_with_id, 
+        src_target=src_folder_tiles_wo_overlap, 
+        tile_size=TILE_SIZE,
+        overlap=0,
+        shift=SHIFT)
 
     # tiles with overlap
-    tilling(src_with_id, src_folder_tiles_w_overlap, TILE_SIZE, OVERLAP)
+    tilling(
+        src_input=src_with_id, 
+        src_target=src_folder_tiles_w_overlap, 
+        tile_size=TILE_SIZE,
+        overlap=OVERLAP,
+        shift=SHIFT)
 
     # Flattening of tiles with overlap
     flattening(
         src_tiles=src_folder_tiles_w_overlap,
         src_new_tiles=src_folder_flatten_tiles_w_overlap,
         grid_size=GRID_SIZE,
-        do_keep_existing=True,
+        method=METHOD,
+        do_save_floor=do_save_floor,
+        do_keep_existing=do_keep_existing_flatten,
         verbose=True,
         verbose_full=False,
     )
@@ -468,10 +812,8 @@ def preprocess():
     # Creating flatten tiles w/o overlap and merging
     list_flatten_to_merge = []
     print("Creating flaten tiles without overlap")
-    # list_tiles = [x for x in os.listdir(src_folder_flatten_tiles_w_overlap) if not x.endswith('_flatten.laz')]
     list_tiles = [x for x in os.listdir(src_folder_tiles_wo_overlap) if x.endswith('.laz')]
     for _, tile in tqdm(enumerate(list_tiles), total=len(list_tiles)):
-        # print(tile)
         assert os.path.exists(os.path.join(src_folder_tiles_wo_overlap, tile))
 
         laz_with_ov = laspy.read(os.path.join(src_folder_flatten_tiles_w_overlap, tile))
@@ -486,15 +828,8 @@ def preprocess():
 
     # Merging
     print("Merging all flatten tiles together (might take a few minutes)")
-    pipeline_json = {
-        "pipeline": list_flatten_to_merge + [
-            {"type": "filters.merge"},
-            {"type": "writers.las", "filename": src_flatten_file, 'extra_dims': 'all'}
-        ]
-    }
-
-    pipeline = pdal.Pipeline(json.dumps(pipeline_json))
-    pipeline.execute()
+    src_flatten_file = os.path.join(SRC_INPUT.split('.laz')[0] + "_flatten.laz")
+    merge_laz(list_flatten_to_merge, src_flatten_file)
 
     # Generate stripes from the merged flatten
     x_span = laz_original.x.max() - laz_original.x.min()
